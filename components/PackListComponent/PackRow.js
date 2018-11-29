@@ -7,13 +7,15 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Navigation } from 'react-native-navigation';
 
+import L from '../../app/i18n';
 import EncounterIcon from '../../assets/EncounterIcon';
 import Switch from '../core/Switch';
 
 export default class PackRow extends React.Component {
   static propTypes = {
-    navigator: PropTypes.object.isRequired,
+    componentId: PropTypes.string.isRequired,
     pack: PropTypes.object,
     cycle: PropTypes.array,
     setChecked: PropTypes.func,
@@ -22,6 +24,7 @@ export default class PackRow extends React.Component {
     whiteBackground: PropTypes.bool,
     baseQuery: PropTypes.string,
     compact: PropTypes.bool,
+    nameOverride: PropTypes.string,
   };
 
   constructor(props) {
@@ -34,15 +37,26 @@ export default class PackRow extends React.Component {
   onPress() {
     const {
       pack,
-      navigator,
+      componentId,
       baseQuery,
     } = this.props;
-    navigator.push({
-      screen: 'Pack',
-      title: pack.name,
-      passProps: {
-        pack_code: pack.code,
-        baseQuery,
+    Navigation.push(componentId, {
+      component: {
+        name: 'Pack',
+        passProps: {
+          pack_code: pack.code,
+          baseQuery,
+        },
+        options: {
+          topBar: {
+            title: {
+              text: pack.name,
+            },
+            backButton: {
+              title: L('Back'),
+            },
+          },
+        },
       },
     });
   }
@@ -89,6 +103,7 @@ export default class PackRow extends React.Component {
       setChecked,
       whiteBackground,
       compact,
+      nameOverride,
     } = this.props;
 
     const mythosPack = (pack.position > 1 && pack.cycle_position < 70);
@@ -116,7 +131,7 @@ export default class PackRow extends React.Component {
               numberOfLines={2}
               ellipsizeMode="tail"
             >
-              { pack.name }
+              { nameOverride || pack.name }
             </Text>
           </View>
         </TouchableOpacity>

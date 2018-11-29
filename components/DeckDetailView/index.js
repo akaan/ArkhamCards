@@ -13,8 +13,10 @@ import { bindActionCreators } from 'redux';
 import { connect } from 'react-redux';
 import MaterialIcons from 'react-native-vector-icons/dist/MaterialIcons';
 import MaterialCommunityIcons from 'react-native-vector-icons/dist/MaterialCommunityIcons';
+import { Navigation } from 'react-native-navigation';
 
 import L from '../../app/i18n';
+import CopyDeckDialog from '../CopyDeckDialog';
 import { handleAuthErrors } from '../authHelper';
 import Dialog from '../core/Dialog';
 import withTextEditDialog from '../core/withTextEditDialog';
@@ -32,11 +34,13 @@ import { getDeck } from '../../reducers';
 
 class DeckDetailView extends React.Component {
   static propTypes = {
-    navigator: PropTypes.object.isRequired,
+    componentId: PropTypes.string.isRequired,
     id: PropTypes.number.isRequired,
     isPrivate: PropTypes.bool,
     modal: PropTypes.bool,
     campaignId: PropTypes.number,
+    // passed props
+    title: PropTypes.string,
     // From realm.
     cards: PropTypes.object,
     // From redux.
@@ -54,48 +58,52 @@ class DeckDetailView extends React.Component {
   constructor(props) {
     super(props);
 
-    const leftButtons = props.modal ? [
-      Platform.OS === 'ios' ? {
-        systemItem: 'done',
-        id: 'back',
-      } : {
-        icon: iconsMap['arrow-left'],
-        id: 'androidBack',
-      },
-    ] : [];
-    const rightButtons = props.isPrivate && props.modal && !props.deck.next_deck ? [
-      {
-        id: 'editName',
-        icon: iconsMap.edit,
-      },
-    ] : [];
-
     this.state = {
       parsedDeck: null,
       slots: {},
       loaded: false,
       saving: false,
-      leftButtons,
+      copying: false,
       nameChange: null,
       hasPendingEdits: false,
     };
+    this._toggleCopyDialog = throttle(this.toggleCopyDialog.bind(this), 200);
     this._saveName = this.saveName.bind(this);
-    this._onEditPressed = this.onEditPressed.bind(this);
-    this._onUpgradePressed = this.onUpgradePressed.bind(this);
+    this._onEditPressed = throttle(this.onEditPressed.bind(this), 200);
+    this._onUpgradePressed = throttle(this.onUpgradePressed.bind(this), 200);
     this._clearEdits = this.clearEdits.bind(this);
-    this._syncNavigatorButtons = this.syncNavigatorButtons.bind(this);
+    this._syncNavigationButtons = this.syncNavigationButtons.bind(this);
     this._updateSlots = this.updateSlots.bind(this);
     this._saveEdits = throttle(this.saveEdits.bind(this, false), 200);
+    this._showEditNameDialog = throttle(this.showEditNameDialog.bind(this), 200);
     this._clearEdits = this.clearEdits.bind(this);
-    this._handleBackPress = this.handleBackPress.bind(this);
+    this._handleBackPress = throttle(this.handleBackPress.bind(this), 200);
+
+    const leftButtons = props.modal ? [
+      Platform.OS === 'ios' ? {
+        text: L('Done'),
+        id: 'back',
+        color: 'white',
+      } : {
+        icon: iconsMap['arrow-left'],
+        id: 'androidBack',
+        color: 'white',
+      },
+    ] : [];
 
     if (props.modal) {
-      props.navigator.setButtons({
-        leftButtons,
-        rightButtons,
+      Navigation.mergeOptions(props.componentId, {
+        topBar: {
+          title: {
+            text: props.title,
+            color: '#FFFFFF',
+          },
+          leftButtons,
+          rightButtons: this.getRightButtons(),
+        },
       });
     }
-    props.navigator.setOnNavigatorEvent(this.onNavigatorEvent.bind(this));
+    this._navEventListener = Navigation.events().bindComponent(this);
   }
 
   componentDidMount() {
@@ -133,11 +141,11 @@ class DeckDetailView extends React.Component {
     if (this.props.modal) {
       BackHandler.removeEventListener('hardwareBackPress', this._handleBackPress);
     }
+    this._navEventListener.remove();
   }
 
   componentDidUpdate(prevProps) {
     const {
-      navigator,
       deck,
       isPrivate,
       previousDeck,
@@ -153,7 +161,7 @@ class DeckDetailView extends React.Component {
           [{
             text: 'OK',
             onPress: () => {
-              navigator.dismissAllModals();
+              Navigation.dismissAllModals();
             },
           }],
         );
@@ -172,36 +180,65 @@ class DeckDetailView extends React.Component {
     }
   }
 
-  syncNavigatorButtons() {
-    /* const {
-      navigator,
+  toggleCopyDialog() {
+    this.setState({
+      copying: !this.state.copying,
+    });
+  }
+
+  getRightButtons() {
+    const {
+      isPrivate,
+      deck,
     } = this.props;
     const {
-      leftButtons,
       hasPendingEdits,
     } = this.state;
-
+    const rightButtons = [];
+    const editable = isPrivate && !deck.next_deck;
     if (hasPendingEdits) {
-      navigator.setButtons({
-        rightButtons: [
-          {
-            systemItem: 'save',
-            id: 'save',
-          },
-        ],
+      rightButtons.push({
+        text: L('Save'),
+        id: 'save',
+        color: 'white',
       });
     } else {
-      navigator.setButtons({
-        rightButtons: [],
+      rightButtons.push({
+        id: 'copy',
+        icon: iconsMap['content-copy'],
+        color: 'white',
       });
-    } */
+      if (editable) {
+        rightButtons.push({
+          id: 'upgrade',
+          icon: iconsMap['arrow-up-bold'],
+          color: 'white',
+        });
+      }
+    }
+    if (editable) {
+      rightButtons.push({
+        id: 'edit',
+        icon: iconsMap.edit,
+        color: 'white',
+      });
+    }
+    return rightButtons;
+  }
+
+  syncNavigationButtons() {
+    const {
+      componentId,
+    } = this.props;
+
+    Navigation.mergeOptions(componentId, {
+      topBar: {
+        rightButtons: this.getRightButtons(),
+      },
+    });
   }
 
   handleBackPress() {
-    const {
-      navigator,
-    } = this.props;
-    console.log('Hardware Back Press');
     if (this.state.hasPendingEdits) {
       Alert.alert(
         'Save deck changes?',
@@ -209,13 +246,13 @@ class DeckDetailView extends React.Component {
         [{
           text: 'Save Changes',
           onPress: () => {
-            this.saveEdits(true);
+            this._saveEdits(true);
           },
         }, {
           text: 'Discard Changes',
           style: 'destructive',
           onPress: () => {
-            navigator.dismissAllModals();
+            Navigation.dismissAllModals();
           },
         }, {
           text: 'Cancel',
@@ -223,20 +260,22 @@ class DeckDetailView extends React.Component {
         }],
       );
     } else {
-      navigator.dismissAllModals();
+      Navigation.dismissAllModals();
     }
     return true;
   }
 
-  onNavigatorEvent(event) {
-    if (event.type === 'NavBarButtonPress') {
-      if (event.id === 'editName') {
-        this.showEditNameDialog();
-      } else if (event.id === 'edit') {
-        this.onEditPressed();
-      } else if (event.id === 'back' || event.id === 'androidBack') {
-        this.handleBackPress();
-      }
+  navigationButtonPressed({ buttonId }) {
+    if (buttonId === 'edit') {
+      this._onEditPressed();
+    } else if (buttonId === 'back' || buttonId === 'androidBack') {
+      this._handleBackPress();
+    } else if (buttonId === 'save') {
+      this._saveEdits();
+    } else if (buttonId === 'upgrade') {
+      this._onUpgradePressed();
+    } else if (buttonId === 'copy') {
+      this._toggleCopyDialog();
     }
   }
 
@@ -249,62 +288,89 @@ class DeckDetailView extends React.Component {
       nameChange: name,
       hasPendingEdits: pendingEdits,
       editNameDialogVisible: false,
-    });
-    this.props.navigator.setTitle({ title: name });
+    }, this._syncNavigationButtons);
   }
 
   onEditPressed() {
     const {
-      navigator,
+      componentId,
       deck,
       previousDeck,
       cards,
     } = this.props;
     const investigator = cards[deck.investigator_code];
-    navigator.push({
-      screen: 'Deck.Edit',
-      backButtonTitle: L('Back'),
-      passProps: {
-        deck,
-        previousDeck,
-        slots: this.state.slots,
-        updateSlots: this._updateSlots,
-      },
-      navigatorStyle: {
-        navBarBackgroundColor: FACTION_DARK_GRADIENTS[investigator ? investigator.faction_code : 'neutral'][0],
-        navBarTextColor: '#FFFFFF',
-        navBarSubtitleColor: '#FFFFFF',
-        navBarButtonColor: '#FFFFFF',
-        statusBarTextColorScheme: 'light',
+    Navigation.push(componentId, {
+      component: {
+        name: 'Deck.Edit',
+        passProps: {
+          deck,
+          previousDeck,
+          slots: this.state.slots,
+          updateSlots: this._updateSlots,
+        },
+        options: {
+          statusBar: {
+            style: 'light',
+          },
+          topBar: {
+            title: {
+              text: L('Edit Deck'),
+              color: 'white',
+            },
+            backButton: {
+              title: L('Back'),
+              color: 'white',
+            },
+            background: {
+              color: FACTION_DARK_GRADIENTS[investigator ? investigator.faction_code : 'neutral'][0],
+            },
+          },
+        },
       },
     });
   }
 
   onUpgradePressed() {
     const {
-      navigator,
+      componentId,
       deck,
       campaignId,
     } = this.props;
     const {
       parsedDeck,
     } = this.state;
-    navigator.push({
-      screen: 'Deck.Upgrade',
-      title: L('Upgrade'),
-      subtitle: parsedDeck ? parsedDeck.investigator.name : '',
-      backButtonTitle: L('Cancel'),
-      passProps: {
-        id: deck.id,
-        showNewDeck: true,
-        campaignId,
+    Navigation.push(componentId, {
+      component: {
+        name: 'Deck.Upgrade',
+        passProps: {
+          id: deck.id,
+          showNewDeck: true,
+          campaignId,
+        },
+        options: {
+          statusBar: {
+            style: 'light',
+          },
+          topBar: {
+            title: {
+              text: L('Upgrade Deck'),
+              color: 'white',
+            },
+            subtitle: {
+              text: parsedDeck ? parsedDeck.investigator.name : '',
+              color: 'white',
+            },
+            background: {
+              color: FACTION_DARK_GRADIENTS[parsedDeck ? parsedDeck.investigator.faction_code : 'neutral'][0],
+            },
+          },
+        },
       },
     });
   }
 
   saveEdits(dismissAfterSave) {
     const {
-      navigator,
       deck,
       updateDeck,
       cards,
@@ -342,13 +408,13 @@ class DeckDetailView extends React.Component {
         deck => {
           updateDeck(deck.id, deck, true);
           if (dismissAfterSave) {
-            navigator.dismissAllModals();
+            Navigation.dismissAllModals();
           } else {
             this.setState({
               saving: false,
               nameChange: null,
               hasPendingEdits: false,
-            });
+            }, this._syncNavigationButtons);
           }
         },
         // onFailure
@@ -370,12 +436,18 @@ class DeckDetailView extends React.Component {
   clearEdits() {
     const {
       deck,
-      navigator,
+      componentId,
     } = this.props;
     this.setState({
       nameChange: null,
     }, () => {
-      navigator.setTitle({ title: deck.name });
+      Navigation.mergeOptions(componentId, {
+        topBar: {
+          title: {
+            text: deck.name,
+          },
+        },
+      });
       this.updateSlots(deck.slots);
     });
   }
@@ -416,7 +488,7 @@ class DeckDetailView extends React.Component {
       slots: newSlots,
       parsedDeck,
       hasPendingEdits: this.hasPendingEdits(this.state.nameChange, newSlots),
-    }, this._syncNavigatorButtons);
+    }, this._syncNavigationButtons);
   }
 
   loadCards(deck, previousDeck) {
@@ -434,7 +506,7 @@ class DeckDetailView extends React.Component {
         parsedDeck,
         hasPendingEdits: false,
         loaded: true,
-      }, this._syncNavigatorButtons);
+      }, this._syncNavigationButtons);
     }
   }
 
@@ -447,6 +519,25 @@ class DeckDetailView extends React.Component {
       L('Edit Deck Name'),
       this.state.nameChange || deck.name,
       this._saveName
+    );
+  }
+
+  renderCopyDialog() {
+    const {
+      componentId,
+      viewRef,
+      id,
+    } = this.props;
+    const {
+      copying,
+    } = this.state;
+    return (
+      <CopyDeckDialog
+        componentId={componentId}
+        deckId={copying ? id : null}
+        toggleVisible={this._toggleCopyDialog}
+        viewRef={viewRef}
+      />
     );
   }
 
@@ -519,7 +610,7 @@ class DeckDetailView extends React.Component {
   render() {
     const {
       deck,
-      navigator,
+      componentId,
       isPrivate,
       captureViewRef,
       cards,
@@ -527,6 +618,7 @@ class DeckDetailView extends React.Component {
     const {
       loaded,
       parsedDeck,
+      nameChange,
     } = this.state;
 
     if (!deck || !loaded || !parsedDeck) {
@@ -540,25 +632,27 @@ class DeckDetailView extends React.Component {
         </View>
       );
     }
-
     return (
       <View>
         <View style={styles.container} ref={captureViewRef}>
           <DeckViewTab
-            navigator={navigator}
+            componentId={componentId}
             deck={deck}
+            deckName={nameChange || deck.name}
             parsedDeck={parsedDeck}
             cards={cards}
             isPrivate={isPrivate}
             buttons={this.renderButtons()}
+            showEditNameDialog={this._showEditNameDialog}
           />
           <DeckNavFooter
-            navigator={navigator}
+            componentId={componentId}
             parsedDeck={parsedDeck}
             cards={cards}
           />
         </View>
         { this.renderSavingDialog() }
+        { this.renderCopyDialog() }
       </View>
     );
   }

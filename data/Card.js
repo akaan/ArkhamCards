@@ -11,7 +11,7 @@ import DeckAtLeastOption from './DeckAtLeastOption';
 import { BASIC_SKILLS } from '../constants';
 
 const USES_REGEX = new RegExp('.*Uses\\s*\\([0-9]+\\s(.+)\\)\\..*');
-const HEALS_HORROR_REGEX = new RegExp('[Hh]eals? (\\d+ damage (and|or) )?(\\d+ )?horror');
+const HEALS_HORROR_REGEX = new RegExp('[Hh]eals? (that much )?(\\d+ damage (and|or) )?(\\d+ )?horror');
 export default class Card {
 
   costString(linked) {
@@ -135,6 +135,7 @@ export default class Card {
     'Asset: Arcane',
     'Asset: Arcane x2',
     'Asset: Body',
+    'Asset: Body. Hand x2',
     'Asset: Permanent',
     'Asset: Other',
     'Event',
@@ -179,6 +180,8 @@ export default class Card {
                 return L('Asset: Arcane x2', options);
               case 'Body':
                 return L('Asset: Body', options);
+              case 'Body. Hand x2':
+                return L('Asset: Body. Hand x2', options);
               default:
                 return L('Asset: Other', options);
             }
@@ -223,7 +226,8 @@ export default class Card {
       });
     }
 
-    let renderName = json.name;
+    const name = json.name.replace('', '');
+    let renderName = name;
     let renderSubname = json.subname;
     if (json.type_code === 'act' && json.stage) {
       renderSubname = L('Act {{stage}}', { stage: json.stage, locale: lang });
@@ -254,10 +258,14 @@ export default class Card {
         map(json.traits.split('.'), trait => trait.toLowerCase().trim()),
         trait => trait),
       trait => `#${trait}#`).join(',') : null;
+    const slots_normalized = json.slot ? map(
+      filter(
+        map(json.slot.split('.'), slot => slot.toLowerCase().trim()),
+        slot => slot),
+      slot => `#${slot}#`).join(',') : null;
     const restrictions = json.restrictions ?
       Card.parseRestrictions(json.restrictions) :
       null;
-
     const uses_match = json.real_text && json.real_text.match(USES_REGEX);
     const uses = uses_match ? uses_match[1].toLowerCase() : null;
 
@@ -283,6 +291,7 @@ export default class Card {
       json,
       eskills,
       {
+        name,
         firstName,
         renderName,
         renderSubname,
@@ -291,6 +300,7 @@ export default class Card {
         linked_card,
         spoiler,
         traits_normalized,
+        slots_normalized,
         uses,
         cycle_name,
         has_restrictions: !!restrictions,
@@ -393,6 +403,7 @@ Card.schema = {
     cycle_name: 'string?',
     has_restrictions: 'bool',
     traits_normalized: 'string?',
+    slots_normalized: 'string?',
     uses: 'string?',
     heals_horror: 'bool?',
     sort_by_type: 'int',

@@ -1,5 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import { Text } from 'react-native';
 import SimpleMarkdown from 'simple-markdown';
 import { MarkdownView } from 'react-native-markdown-view';
 
@@ -10,8 +11,20 @@ import BoldItalicHtmlTagNode from './BoldItalicHtmlTagNode';
 import ItalicHtmlTagNode from './ItalicHtmlTagNode';
 import EmphasisHtmlTagNode from './EmphasisHtmlTagNode';
 import HrTagNode from './HrTagNode';
+import ParagraphHtmlTagNode from './ParagraphHtmlTagNode';
 import UnderlineHtmlTagNode from './UnderlineHtmlTagNode';
 import StrikethroughTextNode from './StrikethroughTextNode';
+
+const ParagraphTagRule = {
+  match: SimpleMarkdown.inlineRegex(new RegExp('^<p>(.+?)<\\/p>')),
+  order: 0,
+  parse: (capture, nestedParse, state) => {
+    return {
+      children: nestedParse(capture[1], state),
+    };
+  },
+  render: ParagraphHtmlTagNode,
+};
 
 const ArkhamIconRule = {
   match: SimpleMarkdown.inlineRegex(new RegExp('^\\[([^\\]]+)\\]')),
@@ -162,6 +175,7 @@ export default class CardText extends React.PureComponent {
             biTag: BoldItalicHtmlTagRule,
             badBiTag: MalformedBoldItalicHtmlTagRule,
             bTag: BoldHtmlTagRule,
+            pTag: ParagraphTagRule,
             uTag: UnderlineHtmlTagRule,
             emTag: EmphasisHtmlTagRule,
             iTag: ItalicHtmlTagRule,

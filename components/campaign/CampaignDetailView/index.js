@@ -1,6 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { filter, flatMap } from 'lodash';
+import { filter, flatMap, throttle } from 'lodash';
 import {
   Alert,
   Button,
@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { bindActionCreators } from 'redux';
 import { connect } from 'react-redux';
+import { Navigation } from 'react-native-navigation';
 
 import L from '../../../app/i18n';
 import CampaignLogSection from './CampaignLogSection';
@@ -30,7 +31,7 @@ import { COLORS } from '../../../styles/colors';
 
 class CampaignDetailView extends React.Component {
   static propTypes = {
-    navigator: PropTypes.object.isRequired,
+    componentId: PropTypes.string.isRequired,
     id: PropTypes.number.isRequired,
     // from HOC
     showTraumaDialog: PropTypes.func.isRequired,
@@ -65,12 +66,24 @@ class CampaignDetailView extends React.Component {
     this._updateWeaknessSet = this.applyCampaignUpdate.bind(this, 'weaknessSet');
     this._deletePressed = this.deletePressed.bind(this);
     this._delete = this.delete.bind(this);
+    this._showShareSheet = throttle(this.showShareSheet.bind(this), 200);
+    this._navEventListener = Navigation.events().bindComponent(this);
 
-    props.navigator.setTitle({
-      title: props.campaign.name,
+    Navigation.mergeOptions(props.componentId, {
+      topBar: {
+        title: {
+          text: props.campaign ? props.campaign.name : L('Campaign'),
+        },
+        rightButtons: [{
+          icon: iconsMap.share,
+          id: 'share',
+        }],
+      },
     });
+  }
 
-    props.navigator.setOnNavigatorEvent(this.onNavigatorEvent.bind(this));
+  componentWillUnmount() {
+    this._navEventListener.remove();
   }
 
   showAddSectionDialog(addSectionFunction) {
@@ -86,22 +99,24 @@ class CampaignDetailView extends React.Component {
     });
   }
 
-  onNavigatorEvent(event) {
+  showShareSheet() {
     const {
       campaign,
       latestDeckIds,
       decks,
       investigators,
     } = this.props;
-    if (event.type === 'NavBarButtonPress') {
-      if (event.id === 'share') {
-        Share.share({
-          text: campaign.name,
-          message: campaignToText(campaign, latestDeckIds, decks, investigators),
-        }, {
-          subject: campaign.name,
-        });
-      }
+    Share.share({
+      text: campaign.name,
+      message: campaignToText(campaign, latestDeckIds, decks, investigators),
+    }, {
+      subject: campaign.name,
+    });
+  }
+
+  navigationButtonPressed({ buttonId }) {
+    if (buttonId === 'share') {
+      this._showShareSheet();
     }
   }
 
@@ -113,23 +128,20 @@ class CampaignDetailView extends React.Component {
     updateCampaign(campaign.id, { [key]: value });
   }
 
-  componentDidMount() {
-    this.props.navigator.setButtons({
-      rightButtons: [{
-        icon: iconsMap.share,
-        id: 'share',
-      }],
-    });
-  }
-
   componentDidUpdate(prevProps) {
     const {
       campaign,
-      navigator,
+      componentId,
       investigatorDataUpdates,
     } = this.props;
     if (campaign && prevProps.campaign && campaign.name !== prevProps.campaign.name) {
-      navigator.setSubTitle({ subtitle: campaign.name });
+      Navigation.mergeOptions(componentId, {
+        topBar: {
+          subtitle: {
+            text: campaign.name,
+          },
+        },
+      });
     }
 
     if (investigatorDataUpdates !== prevProps.investigatorDataUpdates) {
@@ -165,10 +177,10 @@ class CampaignDetailView extends React.Component {
     const {
       id,
       deleteCampaign,
-      navigator,
+      componentId,
     } = this.props;
     deleteCampaign(id);
-    navigator.pop();
+    Navigation.pop(componentId);
   }
 
   renderAddSectionDialog() {
@@ -192,7 +204,7 @@ class CampaignDetailView extends React.Component {
 
   render() {
     const {
-      navigator,
+      componentId,
       campaign,
       latestDeckIds,
       showTraumaDialog,
@@ -207,21 +219,21 @@ class CampaignDetailView extends React.Component {
       <View style={styles.flex}>
         <ScrollView style={styles.flex} ref={captureViewRef}>
           <ScenarioSection
-            navigator={navigator}
+            componentId={componentId}
             campaign={campaign}
           />
           <ChaosBagSection
-            navigator={navigator}
+            componentId={componentId}
             chaosBag={campaign.chaosBag}
             updateChaosBag={this._updateChaosBag}
           />
           <WeaknessSetSection
-            navigator={navigator}
+            componentId={componentId}
             campaignId={campaign.id}
             weaknessSet={campaign.weaknessSet}
           />
           <DecksSection
-            navigator={navigator}
+            componentId={componentId}
             campaignId={campaign.id}
             weaknessSet={campaign.weaknessSet}
             latestDeckIds={latestDeckIds || []}
@@ -231,7 +243,7 @@ class CampaignDetailView extends React.Component {
             updateWeaknessSet={this._updateWeaknessSet}
           />
           <CampaignLogSection
-            navigator={navigator}
+            componentId={componentId}
             campaignNotes={campaign.campaignNotes}
             allInvestigators={allInvestigators}
             updateCampaignNotes={this._updateCampaignNotes}

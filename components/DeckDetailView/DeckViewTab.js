@@ -1,6 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { keys, flatMap, map, range, sum } from 'lodash';
+import { head, keys, flatMap, map, range, sum } from 'lodash';
 import {
   Alert,
   Button,
@@ -12,13 +12,15 @@ import {
   Text,
   ScrollView,
 } from 'react-native';
+import { Navigation } from 'react-native-navigation';
+import MaterialIcons from 'react-native-vector-icons/dist/MaterialIcons';
 
+import AppIcon from '../../assets/AppIcon';
 import L from '../../app/i18n';
 import { DeckType } from '../parseDeck';
 import InvestigatorImage from '../core/InvestigatorImage';
 import DeckProgressModule from './DeckProgressModule';
 import CardSearchResult from '../CardSearchResult';
-import AppIcon from '../../assets/AppIcon';
 import DeckValidation from '../../lib/DeckValidation';
 import typography from '../../styles/typography';
 import { COLORS } from '../../styles/colors';
@@ -62,12 +64,14 @@ const DECK_PROBLEM_MESSAGES = {
 
 export default class DeckViewTab extends React.Component {
   static propTypes = {
-    navigator: PropTypes.object.isRequired,
+    componentId: PropTypes.string.isRequired,
     deck: PropTypes.object,
     parsedDeck: DeckType,
     cards: PropTypes.object.isRequired,
     isPrivate: PropTypes.bool,
     buttons: PropTypes.node,
+    showEditNameDialog: PropTypes.func.isRequired,
+    deckName: PropTypes.string.isRequired,
   };
 
   constructor(props) {
@@ -78,6 +82,7 @@ export default class DeckViewTab extends React.Component {
     this._keyForCard = this.keyForCard.bind(this);
     this._showCard = this.showCard.bind(this);
     this._showInvestigator = this.showInvestigator.bind(this);
+    this._viewDeck = this.viewDeck.bind(this);
     this._deleteDeck = this.deleteDeck.bind(this);
   }
 
@@ -107,6 +112,10 @@ export default class DeckViewTab extends React.Component {
     );
   }
 
+  viewDeck() {
+    Linking.openURL(`https://arkhamdb.com/deck/view/${this.props.deck.id}`);
+  }
+
   showInvestigator() {
     const {
       parsedDeck: {
@@ -117,13 +126,21 @@ export default class DeckViewTab extends React.Component {
   }
 
   showCard(card) {
-    this.props.navigator.push({
-      screen: 'Card',
-      passProps: {
-        id: card.code,
-        pack_code: card.pack_code,
+    Navigation.push(this.props.componentId, {
+      component: {
+        name: 'Card',
+        passProps: {
+          id: card.code,
+          pack_code: card.pack_code,
+        },
+        options: {
+          topBar: {
+            backButton: {
+              title: L('Back'),
+            },
+          },
+        },
       },
-      backButtonTitle: L('Back'),
     });
   }
 
@@ -183,37 +200,42 @@ export default class DeckViewTab extends React.Component {
     if (!problem) {
       return null;
     }
-
+    const isSurvivor = investigator.faction_code === 'survivor';
     return (
-      <View style={styles.problemBox}>
-        <Text style={styles.problemText} numberOfLines={2}>
-          <AppIcon name="warning" size={14} color={COLORS.red} />
-          { DECK_PROBLEM_MESSAGES[problem.reason] }
-        </Text>
-        { problem.problems.map(problem => (
-          <Text key={problem} style={styles.problemText} numberOfLines={2}>
-            { `\u2022 ${problem}` }
+      <View style={[styles.problemBox,
+        { backgroundColor: isSurvivor ? COLORS.yellow : COLORS.red },
+      ]}>
+        <View style={styles.problemRow}>
+          <View style={styles.warningIcon}>
+            <AppIcon name="warning" size={14} color={isSurvivor ? COLORS.black : COLORS.white} />
+          </View>
+          <Text
+            numberOfLines={2}
+            style={[styles.problemText, { color: isSurvivor ? COLORS.black : COLORS.white }]}
+          >
+            { head(problem.problems) || DECK_PROBLEM_MESSAGES[problem.reason] }
           </Text>
-        )) }
+        </View>
       </View>
     );
   }
 
   render() {
     const {
-      navigator,
+      componentId,
       deck,
+      deckName,
       parsedDeck: {
         normalCards,
         specialCards,
         normalCardCount,
         totalCardCount,
         experience,
-        packs,
         investigator,
       },
       isPrivate,
       buttons,
+      showEditNameDialog,
     } = this.props;
 
     const sections = deckToSections(normalCards)
@@ -222,19 +244,32 @@ export default class DeckViewTab extends React.Component {
     return (
       <ScrollView>
         <View>
+          { this.renderProblem() }
           <View style={[styles.container, styles.rowWrap]}>
             <View style={styles.header}>
               <TouchableOpacity onPress={this._showInvestigator}>
                 <View style={styles.image}>
-                  <InvestigatorImage card={investigator} navigator={navigator} />
+                  <InvestigatorImage card={investigator} componentId={componentId} />
                 </View>
               </TouchableOpacity>
               <View style={styles.metadata}>
-                <TouchableOpacity onPress={this._showInvestigator}>
+                { (isPrivate && !deck.next_deck) ? (
+                  <TouchableOpacity style={styles.row} onPress={showEditNameDialog}>
+                    <Text style={styles.investigatorName}
+                      numberOfLines={2}
+                      ellipsizeMode="tail"
+                    >
+                      { deckName }
+                    </Text>
+                    <View style={styles.editIcon}>
+                      <MaterialIcons name="edit" color="#222222" size={16} />
+                    </View>
+                  </TouchableOpacity>
+                ) : (
                   <Text style={styles.investigatorName}>
-                    { investigator.name }
+                    { `${deckName}  ` }
                   </Text>
-                </TouchableOpacity>
+                ) }
                 <Text style={styles.defaultText}>
                   { L(
                     '{{cardCount}} cards ({{totalCount}} total)',
@@ -242,12 +277,13 @@ export default class DeckViewTab extends React.Component {
                   ) }
                 </Text>
                 <Text style={styles.defaultText}>
-                  { L('{{xp}} experience required.', { xp: experience }) }
+                  { L('Version {{version}}', { version: deck.version }) }
                 </Text>
-                <Text style={styles.defaultText}>
-                  { L('{{packCount}} packs required.', { packCount: packs }) }
-                </Text>
-                { this.renderProblem() }
+                { experience > 0 && (
+                  <Text style={styles.defaultText}>
+                    { L('{{xp}} experience required.', { xp: experience }) }
+                  </Text>
+                ) }
               </View>
             </View>
           </View>
@@ -266,11 +302,17 @@ export default class DeckViewTab extends React.Component {
             />
           </View>
           <DeckProgressModule
-            navigator={navigator}
+            componentId={componentId}
             deck={deck}
             parsedDeck={this.props.parsedDeck}
             isPrivate={isPrivate}
           />
+          <View style={styles.button}>
+            <Button
+              title={L('View on ArkhamDB')}
+              onPress={this._viewDeck}
+            />
+          </View>
           { isPrivate && (
             <View style={styles.button}>
               <Button
@@ -290,7 +332,7 @@ const styles = StyleSheet.create({
   header: {
     marginTop: 8,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   button: {
     margin: 8,
@@ -317,14 +359,25 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: 14,
   },
+  problemRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+  },
   problemBox: {
     flex: 1,
+    paddingTop: 4,
+    paddingBottom: 4,
     paddingRight: 8,
+    paddingLeft: 8,
   },
   problemText: {
-    color: COLORS.red,
+    color: COLORS.white,
     fontSize: 14,
     flex: 1,
+  },
+  warningIcon: {
+    marginRight: 4,
   },
   subHeaderRow: {
     backgroundColor: '#eee',
@@ -344,5 +397,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     borderTopWidth: 1,
     borderColor: '#bdbdbd',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 8,
+  },
+  editIcon: {
+    width: 16,
+    marginLeft: 16,
   },
 });

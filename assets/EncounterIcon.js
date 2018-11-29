@@ -163,11 +163,17 @@ export default class EncounterIcon extends React.PureComponent {
         return this.standaloneIcon(encounter_code, size, color);
       case 'hote':
         return this.forgottenIcon('heart_of_the_elders', size, color);
+      case 'tcoa':
+      case 'the_city_of_archives':
+        return this.forgottenIcon('city_of_archives', size, color);
       case 'tfa':
-      case 'tcoa': // THE CITY OF ARCHIVES
-      case 'tdoy': // THE DEPTHS OF YOTH
-      case 'sha': // SHATTERED AEONS
         return this.forgottenIcon('the_forgotten_age', size, color);
+      case 'sha':
+      case 'shattered_aeons':
+        return this.forgottenIcon('shattered_aeons', size, color);
+      case 'tdoy':
+      case 'depths_of_yoth':
+        return this.forgottenIcon('the_depths_of_yoth', size, color);
       case 'tof':
       case 'threads_of_fate':
         return this.forgottenIcon('threads_of_fate', size, color);
@@ -188,6 +194,9 @@ export default class EncounterIcon extends React.PureComponent {
         return this.forgottenIcon('yigs_venom', size, color);
       case 'k\'n-yan':
         return this.forgottenIcon('knyan', size, color);
+      case 'pillars_of_judgment':
+        return this.forgottenIcon('pillars_of_judgement', size, color);
+      case 'turn_back_time':
       case 'rainforest':
       case 'serpents':
       case 'expedition':
@@ -196,6 +205,8 @@ export default class EncounterIcon extends React.PureComponent {
       case 'pnakotic_brotherhood':
       case 'heart_of_the_elders':
       case 'pillars_of_judgement':
+      case 'the_depths_of_yoth':
+      case 'city_of_archives':
       case 'knyan':
       case 'poison':
         return this.forgottenIcon(encounter_code, size, color);
